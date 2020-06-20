@@ -72,6 +72,7 @@ set.seed(16)
 ## Data import
 
 ```{r raster_data_import}
+#Do not forget to download the Sentinel data in the folder src
 bandB <- raster("src/SENTINEL2B_20180920-104712-964_L2A_T31TEH_D_V1-9/SENTINEL2B_20180920-104712-964_L2A_T31TEH_D_V1-9_FRE_B2.tif")
 bandG <- raster("src/SENTINEL2B_20180920-104712-964_L2A_T31TEH_D_V1-9/SENTINEL2B_20180920-104712-964_L2A_T31TEH_D_V1-9_FRE_B3.tif")
 bandR <- raster("src/SENTINEL2B_20180920-104712-964_L2A_T31TEH_D_V1-9/SENTINEL2B_20180920-104712-964_L2A_T31TEH_D_V1-9_FRE_B4.tif")
@@ -115,7 +116,8 @@ writeRaster(bandNIR_crop, "intermediary/bandNIR", overwrite = T)
 | NDSI   (Normalized Difference Salinity Indice)   |    (red - nir)/(red + nir)   |     Khan et al. (2005)     |
 | VSSI   (Vegetation Soil Salinity Indice)         |  2 x green – 5 * (red + nir) |   Dehni and Lounis (2012)  |
 | NDVI   (Normalized Difference Vegetation Indice) |     (nir – red)/(nir+red)    |     Khan et al. (2005)     |
-| SAVI   (Soil Adjusted Vegetation Indice)          | ((1+L)*nir-red))/(L+nir+red) | Alhammadi and Glenn (2008) |
+| SAVI   (Soil Adjusted Vegetation Indice)         | ((1+L)*nir-red))/(L+nir+red) | Alhammadi and Glenn (2008) |
+| NDWI   (Normalized Difference Water Indice)      | (green - nir)/(green + nir)  |      Hanqiu Xu (2006)      |
 
 ## SI.1
 
@@ -129,7 +131,7 @@ writeRaster(SI1, "intermediary/SI1", overwrite = T)
 ## SI.2
 
 ```{r SI2}
-SI2 <- (bandNIR_crop - bandR_crop) / (bandNIR_crop + bandR_crop)
+SI2 <- sqrt(bandG_crop**2 * bandR_crop**2)
 SI2_data <- round(data.matrix(matrix(SI2@data@values, ncol = SI2@ncols, nrow = SI2@nrows)),3)
 #plot_ly(z = SI2_data, colors = colorRamp(c("red","green")), type = "heatmap")
 writeRaster(SI2, "intermediary/SI2", overwrite = T)
@@ -138,7 +140,7 @@ writeRaster(SI2, "intermediary/SI2", overwrite = T)
 ## SI.3
 
 ```{r SI3}
-SI3 <- (bandNIR_crop - bandR_crop) / (bandNIR_crop + bandR_crop)
+SI3 <- sqrt(bandR_crop * bandG_crop)
 SI3_data <- round(data.matrix(matrix(SI3@data@values, ncol = SI3@ncols, nrow = SI3@nrows)),3)
 #plot_ly(z = SI3_data, colors = colorRamp(c("red","green")), type = "heatmap")
 writeRaster(SI3, "intermediary/SI3", overwrite = T)
@@ -147,7 +149,7 @@ writeRaster(SI3, "intermediary/SI3", overwrite = T)
 ## SI.4
 
 ```{r SI4}
-SI4 <- (bandNIR_crop - bandR_crop) / (bandNIR_crop + bandR_crop)
+SI4 <- sqrt(bandR_crop * bandB_crop)
 SI4_data <- round(data.matrix(matrix(SI4@data@values, ncol = SI4@ncols, nrow = SI4@nrows)),3)
 #plot_ly(z = SI4_data, colors = colorRamp(c("red","green")), type = "heatmap")
 writeRaster(SI4, "intermediary/SI4", overwrite = T)
@@ -156,7 +158,7 @@ writeRaster(SI4, "intermediary/SI4", overwrite = T)
 ## SI.5
 
 ```{r SI5}
-SI5 <- (bandNIR_crop - bandR_crop) / (bandNIR_crop + bandR_crop)
+SI5 <- (bandR_crop * bandNIR_crop) / bandG_crop
 SI5_data <- round(data.matrix(matrix(SI5@data@values, ncol = SI5@ncols, nrow = SI5@nrows)),3)
 #plot_ly(z = SI5_data, colors = colorRamp(c("red","green")), type = "heatmap")
 writeRaster(SI5, "intermediary/SI5", overwrite = T)
@@ -165,7 +167,7 @@ writeRaster(SI5, "intermediary/SI5", overwrite = T)
 ## SI.6
 
 ```{r SI6}
-SI6 <- (bandNIR_crop - bandR_crop) / (bandNIR_crop + bandR_crop)
+SI6 <- bandB_crop / bandNIR_crop
 SI6_data <- round(data.matrix(matrix(SI6@data@values, ncol = SI6@ncols, nrow = SI6@nrows)),3)
 #plot_ly(z = SI6_data, colors = colorRamp(c("red","green")), type = "heatmap")
 writeRaster(SI6, "intermediary/SI6", overwrite = T)
@@ -174,7 +176,7 @@ writeRaster(SI6, "intermediary/SI6", overwrite = T)
 ## BI
 
 ```{r BI}
-BI <- (bandNIR_crop - bandR_crop) / (bandNIR_crop + bandR_crop)
+BI <- sqrt(bandNIR_crop**2 * bandR_crop**2)
 BI_data <- round(data.matrix(matrix(BI@data@values, ncol = BI@ncols, nrow = BI@nrows)),3)
 #plot_ly(z = BI_data, colors = colorRamp(c("red","green")), type = "heatmap")
 writeRaster(BI, "intermediary/BI", overwrite = T)
@@ -183,7 +185,7 @@ writeRaster(BI, "intermediary/BI", overwrite = T)
 ## NDSI
 
 ```{r NDSI}
-NDSI <- (bandNIR_crop - bandR_crop) / (bandNIR_crop + bandR_crop)
+NDSI <- (bandR_crop - bandNIR_crop) / (bandR_crop + bandNIR_crop)
 NDSI_data <- round(data.matrix(matrix(NDSI@data@values, ncol = NDSI@ncols, nrow = NDSI@nrows)),3)
 #plot_ly(z = NDSI_data, colors = colorRamp(c("red","green")), type = "heatmap")
 writeRaster(NDSI, "intermediary/NDSI", overwrite = T)
@@ -192,7 +194,7 @@ writeRaster(NDSI, "intermediary/NDSI", overwrite = T)
 ## VSSI
 
 ```{r VSSI}
-VSSI <- (bandNIR_crop - bandR_crop) / (bandNIR_crop + bandR_crop)
+VSSI <- 2*bandG_crop - 5*(bandR_crop+bandNIR_crop)
 VSSI_data <- round(data.matrix(matrix(VSSI@data@values, ncol = VSSI@ncols, nrow = VSSI@nrows)),3)
 #plot_ly(z = VSSI_data, colors = colorRamp(c("red","green")), type = "heatmap")
 writeRaster(VSSI, "intermediary/VSSI", overwrite = T)
@@ -211,6 +213,16 @@ writeRaster(NDVI, "intermediary/NDVI", overwrite = T)
 
 ```{r SAVI}
 SAVI <- (bandNIR_crop - bandR_crop) / (bandNIR_crop + bandR_crop + 0.5) * 1.5
+SAVI_data <- round(data.matrix(matrix(SAVI@data@values, ncol = SAVI@ncols, nrow = SAVI@nrows)),3)
+#plot_ly(z = SAVI_data, colors = colorRamp(c("red","green")), type = "heatmap")
+writeRaster(SAVI, "intermediary/SAVI", overwrite = T)
+```
+
+
+## NDWI
+
+```{r NDWI}
+NDWI <- (bandG_crop - bandNIR_crop) / (bandG_crop + bandNIR_crop)
 SAVI_data <- round(data.matrix(matrix(SAVI@data@values, ncol = SAVI@ncols, nrow = SAVI@nrows)),3)
 #plot_ly(z = SAVI_data, colors = colorRamp(c("red","green")), type = "heatmap")
 writeRaster(SAVI, "intermediary/SAVI", overwrite = T)
@@ -294,7 +306,7 @@ test.data <- dat[-training.sample,]
 ## Model PCR
 
 ```{r modelPCR}
-modelPCR <- train(ground_data~., data = train.data, method = "pcr", scale = TRUE, trControl = trainControl("cv", number = 10), tuneLength = 8) 
+modelPCR <- train(ground_data~., data = train.data, method = "pcr", scale = TRUE, trControl = trainControl("cv", number = 100), tuneLength = 8) 
 # Plot model RMSE vs different values of components
 plot(modelPCR)
 # Print the best tuning parameter ncomp that
@@ -315,7 +327,7 @@ data.frame(
 ## Model PLS
 
 ```{r modelPLS}
-modelPLS <- train(ground_data~., data = train.data, method = "pcr", scale = TRUE, trControl = trainControl("cv", number = 10), tuneLength = 8) 
+modelPLS <- train(ground_data~., data = train.data, method = "pcr", scale = TRUE, trControl = trainControl("cv", number = 100), tuneLength = 8) 
 # Plot model RMSE vs different values of components
 plot(modelPLS)
 # Print the best tuning parameter ncomp that
@@ -335,7 +347,7 @@ data.frame(
 ## Model ElasticNet
 
 ```{r modelElasticNet}
-model <- train(ground_data~., data = train.data, method = "glmnet", trControl = trainControl("cv", number = 10), tuneLength = 10)
+model <- train(ground_data~., data = train.data, method = "glmnet", trControl = trainControl("cv", number = 100), tuneLength = 10)
 
 # Best tuning parameter
 model$bestTune
