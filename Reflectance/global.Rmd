@@ -1,0 +1,367 @@
+---
+title: "reflectance"
+author: "Guilhem Huau"
+date: "`r format(Sys.time(), '%Y/%m/%d')`"
+colorlinks: true
+output:
+  html_document:
+    self_contained: true
+    toc: true
+    toc_depth: 4
+    toc_float: true
+    number_sections: TRUE
+    code_folding: hide
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitStartTime <- Sys.time()
+knitr::opts_chunk$set(echo = TRUE,
+                      eval = TRUE,
+                      include = TRUE,
+                      warning = TRUE,
+                      message = TRUE,
+                      cache = FALSE, # save chunks output
+                      results = "hold", # display chunk output in one block
+                      
+                      # df_print paged options
+                      rows.print = 10,
+                      max.print = Inf,
+                      
+                      
+                      # format
+                      tidy = FALSE, # format code with 'tidy_source()'
+                      tidy.opts = list(width.cutoff = 80),
+                      strip.white = TRUE, #remove the white lines in the beginning or end of a source chunk
+                      
+                      fig.align = "center",
+                      fig.width = 9,
+                      fig.height = 5)
+knitr::opts_knit$set(progress = TRUE,
+                     verbose = FALSE,
+                     width = 80)
+```
+
+```{css echo=FALSE, eval = TRUE}
+/* add some CSS styling here */
+```
+
+**Packages / R-options:**
+```{r pkgs_options, results='hide'}
+suppressPackageStartupMessages({
+  library(raster)
+  library(dplyr)
+  library(tidyr)
+  library(plotly)
+  library(ggplot2)
+  library(FactoMineR)
+  library(factoextra)
+  library(rgdal)
+  library(sf)
+  library(caret)
+  library(pls)
+  library(glmnet)
+})
+#  R options
+options(max.print = 20)
+set.seed(16)
+```
+
+
+
+## Data import
+
+```{r raster_data_import}
+bandB <- raster("src/SENTINEL2B_20180920-104712-964_L2A_T31TEH_D_V1-9/SENTINEL2B_20180920-104712-964_L2A_T31TEH_D_V1-9_FRE_B2.tif")
+bandG <- raster("src/SENTINEL2B_20180920-104712-964_L2A_T31TEH_D_V1-9/SENTINEL2B_20180920-104712-964_L2A_T31TEH_D_V1-9_FRE_B3.tif")
+bandR <- raster("src/SENTINEL2B_20180920-104712-964_L2A_T31TEH_D_V1-9/SENTINEL2B_20180920-104712-964_L2A_T31TEH_D_V1-9_FRE_B4.tif")
+bandNIR <- raster("src/SENTINEL2B_20180920-104712-964_L2A_T31TEH_D_V1-9/SENTINEL2B_20180920-104712-964_L2A_T31TEH_D_V1-9_FRE_B8.tif")
+bandNIR_A <- raster("src/SENTINEL2B_20180920-104712-964_L2A_T31TEH_D_V1-9/SENTINEL2B_20180920-104712-964_L2A_T31TEH_D_V1-9_FRE_B8A.tif")
+bandSWIR <- raster("src/SENTINEL2B_20180920-104712-964_L2A_T31TEH_D_V1-9/SENTINEL2B_20180920-104712-964_L2A_T31TEH_D_V1-9_FRE_B11.tif")
+
+extent(bandR)
+
+
+```
+
+
+```{r crop}
+test_area <- extent(503000,509000,4784000,4790000)
+work_area <- readOGR("src/mygeodata")
+work_area <- spTransform(work_area, crs(bandB))
+
+bandB_crop <- crop(bandB, test_area)
+bandG_crop <- crop(bandG, test_area)
+bandR_crop <- crop(bandR, test_area)
+bandNIR_crop <- crop(bandNIR, test_area)
+
+writeRaster(bandB_crop, "intermediary/bandB", overwrite = T)
+writeRaster(bandG_crop, "intermediary/bandG", overwrite = T)
+writeRaster(bandR_crop, "intermediary/bandR", overwrite = T)
+writeRaster(bandNIR_crop, "intermediary/bandNIR", overwrite = T)
+
+```
+# Indices
+
+|                      Indices                     |           Formulas           |          Reference         |
+|:------------------------------------------------:|:----------------------------:|:--------------------------:|
+| SI.1   (Salinity indice 1)                       |        sqrt (red*nir)        |   Dehni and Lounis (2012)  |
+| SI.2   (Salinity indice 2)                       |    sqrt (green^2 + red^2)    |   Dehni and Lounis (2012)  |
+| SI.3   (Salinity indice 3)                       |      sqrt (green  x red)     |   Dehni and Lounis (2012)  |
+| SI.4   (Salinity indice 4)                       |       sqrt (blue x red)      |   Dehni and Lounis (2012)  |
+| SI.5   (Salinity indice 5)                       |       (red x NIR)/green      |   Dehni and Lounis (2012)  |
+| SI.6   (Salinity indice 6)                       |           blue/red           |   Dehni and Lounis (2012)  |
+| BI   (Brightness indice)                         |      sqrt (red^2+nir^2)      |     Khan et al. (2005)     |
+| NDSI   (Normalized Difference Salinity Indice)   |    (red - nir)/(red + nir)   |     Khan et al. (2005)     |
+| VSSI   (Vegetation Soil Salinity Indice)         |  2 x green – 5 * (red + nir) |   Dehni and Lounis (2012)  |
+| NDVI   (Normalized Difference Vegetation Indice) |     (nir – red)/(nir+red)    |     Khan et al. (2005)     |
+| SAVI   (Soil Adjusted Vegetation Indice)          | ((1+L)*nir-red))/(L+nir+red) | Alhammadi and Glenn (2008) |
+
+## SI.1
+
+```{r SI1}
+SI1 <- sqrt(bandNIR_crop * bandR_crop)
+SI1_data <- round(data.matrix(matrix(SI1@data@values, ncol = SI1@ncols, nrow = SI1@nrows)),3)
+#plot_ly(z = SI1_data, colors = colorRamp(c("red","green")), type = "heatmap")
+writeRaster(SI1, "intermediary/SI1", overwrite = T)
+```
+
+## SI.2
+
+```{r SI2}
+SI2 <- (bandNIR_crop - bandR_crop) / (bandNIR_crop + bandR_crop)
+SI2_data <- round(data.matrix(matrix(SI2@data@values, ncol = SI2@ncols, nrow = SI2@nrows)),3)
+#plot_ly(z = SI2_data, colors = colorRamp(c("red","green")), type = "heatmap")
+writeRaster(SI2, "intermediary/SI2", overwrite = T)
+```
+
+## SI.3
+
+```{r SI3}
+SI3 <- (bandNIR_crop - bandR_crop) / (bandNIR_crop + bandR_crop)
+SI3_data <- round(data.matrix(matrix(SI3@data@values, ncol = SI3@ncols, nrow = SI3@nrows)),3)
+#plot_ly(z = SI3_data, colors = colorRamp(c("red","green")), type = "heatmap")
+writeRaster(SI3, "intermediary/SI3", overwrite = T)
+```
+
+## SI.4
+
+```{r SI4}
+SI4 <- (bandNIR_crop - bandR_crop) / (bandNIR_crop + bandR_crop)
+SI4_data <- round(data.matrix(matrix(SI4@data@values, ncol = SI4@ncols, nrow = SI4@nrows)),3)
+#plot_ly(z = SI4_data, colors = colorRamp(c("red","green")), type = "heatmap")
+writeRaster(SI4, "intermediary/SI4", overwrite = T)
+```
+
+## SI.5
+
+```{r SI5}
+SI5 <- (bandNIR_crop - bandR_crop) / (bandNIR_crop + bandR_crop)
+SI5_data <- round(data.matrix(matrix(SI5@data@values, ncol = SI5@ncols, nrow = SI5@nrows)),3)
+#plot_ly(z = SI5_data, colors = colorRamp(c("red","green")), type = "heatmap")
+writeRaster(SI5, "intermediary/SI5", overwrite = T)
+```
+
+## SI.6
+
+```{r SI6}
+SI6 <- (bandNIR_crop - bandR_crop) / (bandNIR_crop + bandR_crop)
+SI6_data <- round(data.matrix(matrix(SI6@data@values, ncol = SI6@ncols, nrow = SI6@nrows)),3)
+#plot_ly(z = SI6_data, colors = colorRamp(c("red","green")), type = "heatmap")
+writeRaster(SI6, "intermediary/SI6", overwrite = T)
+```
+
+## BI
+
+```{r BI}
+BI <- (bandNIR_crop - bandR_crop) / (bandNIR_crop + bandR_crop)
+BI_data <- round(data.matrix(matrix(BI@data@values, ncol = BI@ncols, nrow = BI@nrows)),3)
+#plot_ly(z = BI_data, colors = colorRamp(c("red","green")), type = "heatmap")
+writeRaster(BI, "intermediary/BI", overwrite = T)
+```
+
+## NDSI
+
+```{r NDSI}
+NDSI <- (bandNIR_crop - bandR_crop) / (bandNIR_crop + bandR_crop)
+NDSI_data <- round(data.matrix(matrix(NDSI@data@values, ncol = NDSI@ncols, nrow = NDSI@nrows)),3)
+#plot_ly(z = NDSI_data, colors = colorRamp(c("red","green")), type = "heatmap")
+writeRaster(NDSI, "intermediary/NDSI", overwrite = T)
+```
+
+## VSSI
+
+```{r VSSI}
+VSSI <- (bandNIR_crop - bandR_crop) / (bandNIR_crop + bandR_crop)
+VSSI_data <- round(data.matrix(matrix(VSSI@data@values, ncol = VSSI@ncols, nrow = VSSI@nrows)),3)
+#plot_ly(z = VSSI_data, colors = colorRamp(c("red","green")), type = "heatmap")
+writeRaster(VSSI, "intermediary/VSSI", overwrite = T)
+```
+
+## NDVI
+
+```{r NDVI}
+NDVI <- (bandNIR_crop - bandR_crop) / (bandNIR_crop + bandR_crop)
+NDVI_data <- round(data.matrix(matrix(NDVI@data@values, ncol = NDVI@ncols, nrow = NDVI@nrows)),3)
+#plot_ly(z = NDVI_data, colors = colorRamp(c("red","green")), type = "heatmap")
+writeRaster(NDVI, "intermediary/NDVI", overwrite = T)
+```
+
+## Soil Adjusted Vegetation Index
+
+```{r SAVI}
+SAVI <- (bandNIR_crop - bandR_crop) / (bandNIR_crop + bandR_crop + 0.5) * 1.5
+SAVI_data <- round(data.matrix(matrix(SAVI@data@values, ncol = SAVI@ncols, nrow = SAVI@nrows)),3)
+#plot_ly(z = SAVI_data, colors = colorRamp(c("red","green")), type = "heatmap")
+writeRaster(SAVI, "intermediary/SAVI", overwrite = T)
+```
+
+
+
+# Ground data import
+
+```{r groud_data_import}
+ground_data <- read.csv("src/Données_Terrain_2018_2019(JRLv3).csv")
+head(ground_data)
+
+ground_data_small <- select(ground_data[ground_data$EC_mS_cm != "" ,c(8,10,12,30)], Coordinates_X_UTM_31, Coordinates_Y_UTM_31, Profondeur_cm, EC_mS_cm)
+ground_data_small <- ground_data_small[starts_with(vars = ground_data_small$Profondeur_cm, match = "0-"),c(1,2,4)]
+
+ground_data_small <- ground_data_small[-c(326,481,482,509,524,713,721,741),]
+
+ground_data_small$Coordinates_X_UTM_31 <- as.numeric(gsub(",",".", ground_data_small$Coordinates_X_UTM_31))
+ground_data_small$Coordinates_Y_UTM_31 <- as.numeric(gsub(",",".", ground_data_small$Coordinates_Y_UTM_31))
+ground_data_small$EC_mS_cm <- as.numeric(gsub(",",".", ground_data_small$EC_mS_cm))
+
+coordinates(ground_data_small) <- ~Coordinates_X_UTM_31+Coordinates_Y_UTM_31
+
+ras <- raster()
+extent(ras) <- extent(work_area)
+crs(ras) <- crs(bandB)
+res(ras) <- res(bandB)
+test1 <- rasterize(x = ground_data_small, y = ras, field = 'EC_mS_cm', fun = mean)
+
+
+test2 <- resample(test1, bandB_crop)
+writeRaster(test2, "intermediary/ground_data", overwrite = T)
+```
+
+
+```{r creation_RasterStack}
+ras_stack <- raster::stack("intermediary/bandB", "intermediary/bandG", "intermediary/bandR", "intermediary/bandNIR", "intermediary/SI1", "intermediary/SI2", "intermediary/SI3", "intermediary/SI4", "intermediary/SI5", "intermediary/SI6", "intermediary/BI", "intermediary/NDSI", "intermediary/VSSI", "intermediary/NDVI", "intermediary/SAVI", "intermediary/ground_data")
+names(ras_stack) <- c("bandB_crop", "bandG_crop", "bandR_crop", "bandNIR_crop", "SI1", "SI2", "SI3", "SI4", "SI5", "SI6", "BI", "NDSI", "VSSI", "NDVI", "SAVI", "ground_data")
+stackSave(ras_stack, "intermediary/stack")
+```
+
+```{r PCA}
+ras_stack <- stackOpen("intermediary/stack")
+dat <- as.data.frame(raster::extract(ras_stack, extent(ras_stack)))
+colnames(dat) <- c("bandB_crop", "bandG_crop", "bandR_crop", "bandNIR_crop", "SI1", "SI2", "SI3", "SI4", "SI5", "SI6", "BI", "NDSI", "VSSI", "NDVI", "SAVI", "ground_data")
+
+#pca_result <- PCA(dat[,-ncol(dat)], graph = F) #WARNING !!!! EVI and RVI returns some infinite number which lead to a problem
+
+#pca_dat <- get_pca_ind(pca_result)$coord[,1:3]
+#dat <- data.frame(dat, pca_dat)
+dat <- filter(dat, is.na(ground_data) == F)
+```
+
+## Model lm
+
+```{r modelLM, eval=FALSE, include=FALSE}
+model <- lm(data= dat, ground_data ~ .)
+summary(model)
+```
+
+## Visu data
+
+```{r visu}
+dat_visu <- dat %>%
+  as_tibble()%>%
+  gather(key = "variable", value = "value", -ground_data)
+
+ggplot(dat_visu, aes(x = value, y = ground_data)) +
+  geom_point() +
+  facet_wrap(~variable, scales = "free")
+```
+
+
+```{r modeldata}
+training.sample <- createDataPartition(dat$ground_data, p = 0.75, list = FALSE)
+train.data <- dat[training.sample,]
+test.data <- dat[-training.sample,]
+```
+
+## Model PCR
+
+```{r modelPCR}
+modelPCR <- train(ground_data~., data = train.data, method = "pcr", scale = TRUE, trControl = trainControl("cv", number = 10), tuneLength = 8) 
+# Plot model RMSE vs different values of components
+plot(modelPCR)
+# Print the best tuning parameter ncomp that
+# minimize the cross-validation error, RMSE
+modelPCR$bestTune
+
+# Summarize the final model
+summary(modelPCR$finalModel)
+
+# Make predictions
+predictionsPCR <- modelPCR %>% predict(test.data)
+# Model performance metrics
+data.frame(
+  RMSE = caret::RMSE(predictionsPCR, test.data$ground_data),
+  Rsquare = caret::R2(predictionsPCR, test.data$ground_data)
+)
+```
+## Model PLS
+
+```{r modelPLS}
+modelPLS <- train(ground_data~., data = train.data, method = "pcr", scale = TRUE, trControl = trainControl("cv", number = 10), tuneLength = 8) 
+# Plot model RMSE vs different values of components
+plot(modelPLS)
+# Print the best tuning parameter ncomp that
+# minimize the cross-validation error, RMSE
+modelPLS$bestTune
+
+# Summarize the final model
+summary(modelPLS$finalModel)
+
+# Make predictions
+predictions <- modelPLS %>% predict(test.data)
+# Model performance metrics
+data.frame(
+  RMSE = caret::RMSE(predictions, test.data$ground_data), Rsquare = caret::R2(predictions, test.data$ground_data))
+```
+
+## Model ElasticNet
+
+```{r modelElasticNet}
+model <- train(ground_data~., data = train.data, method = "glmnet", trControl = trainControl("cv", number = 10), tuneLength = 10)
+
+# Best tuning parameter
+model$bestTune
+
+# Coefficient of the final model. You need
+# to specify the best lambda
+coef(model$finalModel, model$bestTune$lambda)
+
+# Make predictions on the test data
+x.test <- model.matrix(ground_data ~., test.data)[,-1]
+predictions <- model %>% predict(x.test)
+# Model performance metrics
+data.frame(RMSE = RMSE(predictions, test.data$ground_data), Rsquare = caret::R2(predictions, test.data$ground_data))
+```
+
+# Appendix
+```{r sessionInfo, echo=FALSE}
+options(max.print = 10000)
+cat("Document generated in:\n")
+print(Sys.time() - knitStartTime)
+if (Sys.info()["sysname"] == "Linux") {
+  cat("\nCPU: ")
+  cat(unique(system("awk -F': ' '/model name/{print $2}' /proc/cpuinfo", intern = T)))
+  cat("\nMemory total size: ")
+  cat(as.numeric(system("awk '/MemTotal/ {print $2}' /proc/meminfo", intern = T))*10^(-6), "GB")
+  }
+cat("\n\n\nSession information:\n")
+print(sessionInfo(), locale = FALSE)
+```
